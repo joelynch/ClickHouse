@@ -1,0 +1,38 @@
+services:
+    postgresql-ssl:
+        image: postgres
+        command: [
+          "postgres",
+          "-c", "wal_level=logical",
+          "-c", "max_replication_slots=4",
+          "-c", "logging_collector=on",
+          "-c", "log_directory=/postgres/logs",
+          "-c", "log_filename=postgresql.log",
+          "-c", "log_statement=all",
+          "-c", "max_connections=200",
+          "-c", "ssl=on",
+          "-c", "ssl_cert_file=/postgres/certs/server.crt",
+          "-c", "ssl_key_file=/postgres/certs/server.key",
+          "-c", "ssl_ca_file=/postgres/certs/ca.crt"
+        ]
+        restart: always
+        expose:
+            - ${POSTGRES_SSL_PORT:-5432}
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U postgres"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+        networks:
+            default:
+                aliases:
+                    - postgresql-ssl.local
+        environment:
+            POSTGRES_HOST_AUTH_METHOD: "trust"
+            POSTGRES_PASSWORD: mysecretpassword
+            PGDATA: /postgres/data
+        volumes:
+            - type: ${POSTGRES_SSL_LOGS_FS:-tmpfs}
+              source: ${POSTGRES_SSL_DIR:-}
+              target: /postgres/
+            - /misc/postgresql_ssl/:/postgres/certs/

@@ -84,6 +84,9 @@ RUN set -x \
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
 COPY misc/ /misc/
+RUN chown 999:999 /misc/postgresql_ssl/server.key \
+  && chmod 600 /misc/postgresql_ssl/server.key \
+  && chmod 600 /misc/postgresql_ssl/client.key
 
 COPY --from=clickhouse/cctools:0d6b90a7a490 /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"

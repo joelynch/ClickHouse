@@ -1,0 +1,24 @@
+<clickhouse>
+    <named_collections>
+        <postgresql_ssl>
+            <user>postgres</user>
+            <password>mysecretpassword</password>
+            <host>postgresql-ssl.local</host>
+            <port>5432</port>
+            <database>postgres</database>
+            <table>test_table</table>
+            <sslmode>verify-full</sslmode>
+            <sslrootcert>/misc/postgresql_ssl/ca.crt</sslrootcert>
+            <sslclientcert>/misc/postgresql_ssl/client.crt</sslclientcert>
+            <sslclientkey>/misc/postgresql_ssl/client.key</sslclientkey>
+        </postgresql_ssl>
+        <postgresql_no_ssl>
+            <user>postgres</user>
+            <password>mysecretpassword</password>
+            <host>postgresql-ssl.local</host>
+            <port>5432</port>
+            <database>postgres</database>
+            <table>test_table</table>
+        </postgresql_no_ssl>
+    </named_collections>
+</clickhouse>

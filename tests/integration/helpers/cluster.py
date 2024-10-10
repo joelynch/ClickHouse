@@ -531,6 +531,7 @@ class ClickHouseCluster:
         self.with_mysql_cluster = False
         self.with_postgres = False
         self.with_postgres_cluster = False
+        self.with_postgresql_ssl = False
         self.with_postgresql_java_client = False
         self.with_kafka = False
         self.with_kerberized_kafka = False
@@ -685,6 +686,13 @@ class ClickHouseCluster:
         self.postgres3_logs_dir = os.path.join(self.postgres_dir, "postgres3")
         self.postgres4_logs_dir = os.path.join(self.postgres_dir, "postgres4")
         self.postgres_id = self.get_instance_docker_id(self.postgres_host)
+
+        # avaliable when with_postgres_ssl == True
+        self.postgresql_ssl_host = "postgresql-ssl"
+        self.postgresql_ssl_ip = None
+        self.postgresql_ssl_port = 5432
+        self.postgresql_ssl_conn = None
+        self.postgresql_ssl_logs_dir = os.path.join(self.postgres_dir, "ssl")
 
         # available when with_postgresql_java_client = True
         self.postgresql_java_client_host = "java"
@@ -1201,6 +1209,23 @@ class ClickHouseCluster:
         )
         return self.base_postgres_cmd
 
+    def setup_postgres_ssl_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_postgresql_ssl.yml")]
+        )
+        env_variables["POSTGRES_SSL_PORT"] = str(self.postgres_port)
+        env_variables["POSTGRES_SSL_DIR"] = self.postgresql_ssl_logs_dir
+        env_variables["POSTGRES_SSL_LOGS_FS"] = "bind"
+
+        self.with_postgresql_ssl = True
+        self.base_postgresql_ssl_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_postgresql_ssl.yml"),
+        )
+        return self.base_postgresql_ssl_cmd
+
     def setup_postgres_cluster_cmd(
         self, instance, env_variables, docker_compose_yml_dir
     ):
@@ -1611,6 +1636,7 @@ class ClickHouseCluster:
         clickhouse_path_dir=None,
         with_odbc_drivers=False,
         with_postgres=False,
+        with_postgres_ssl=False,
         with_postgres_cluster=False,
         with_postgresql_java_client=False,
         clickhouse_log_file=CLICKHOUSE_LOG_FILE,
@@ -1737,6 +1763,7 @@ class ClickHouseCluster:
             clickhouse_path_dir=clickhouse_path_dir,
             with_odbc_drivers=with_odbc_drivers,
             with_postgres=with_postgres,
+            with_postgres_ssl=with_postgres_ssl,
             with_postgres_cluster=with_postgres_cluster,
             with_postgresql_java_client=with_postgresql_java_client,
             clickhouse_start_command=clickhouse_start_command,
@@ -1822,6 +1849,13 @@ class ClickHouseCluster:
         if with_postgres and not self.with_postgres:
             cmds.append(
                 self.setup_postgres_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_postgres_ssl and not self.with_postgresql_ssl:
+            cmds.append(
+                self.setup_postgres_ssl_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
             )
 
         if with_postgres_cluster and not self.with_postgres_cluster:
@@ -2297,6 +2331,32 @@ class ClickHouseCluster:
                 time.sleep(0.5)
 
         raise Exception("Cannot wait Postgres container")
+
+    def wait_postgresql_ssl_to_start(self, timeout=10):
+        self.postgresql_ssl_ip = self.get_instance_ip(self.postgresql_ssl_host)
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                self.postgresql_ssl_conn = psycopg2.connect(
+                    host=self.postgresql_ssl_ip,
+                    port=self.postgresql_ssl_port,
+                    database=pg_db,
+                    user=pg_user,
+                    password=pg_pass,
+                    sslmode="verify-ca",
+                    sslcert="/misc/postgresql_ssl/client.crt",
+                    sslkey="/misc/postgresql_ssl/client.key",
+                    sslrootcert="/misc/postgresql_ssl/ca.crt",
+                )
+                self.postgresql_ssl_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+                self.postgresql_ssl_conn.autocommit = True
+                logging.debug("Postgres SSL Started")
+                return
+            except Exception as ex:
+                logging.debug("Can't connect to Postgres SSL " + str(ex))
+                time.sleep(0.5)
+
+        raise Exception("Cannot wait Postgres SSL container")
 
     def wait_postgres_cluster_to_start(self, timeout=180):
         self.postgres2_ip = self.get_instance_ip(self.postgres2_host)
@@ -2881,6 +2941,14 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.wait_postgres_cluster_to_start()
 
+            if self.with_postgresql_ssl and self.base_postgresql_ssl_cmd:
+                logging.debug("Setup Postgres with SSL")
+                os.makedirs(self.postgresql_ssl_logs_dir)
+                os.chmod(self.postgresql_ssl_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                subprocess_check_call(self.base_postgresql_ssl_cmd + common_opts)
+                self.up_called = True
+                self.wait_postgresql_ssl_to_start()
+
             if (
                 self.with_postgresql_java_client
                 and self.base_postgresql_java_client_cmd
@@ -3179,7 +3247,8 @@ class ClickHouseCluster:
                     logging.error("Crash in instance %s fatal log %s", name, fatal_log)
 
             try:
-                subprocess_check_call(self.base_cmd + ["down", "--volumes"])
+                # subprocess_check_call(self.base_cmd + ["down", "--volumes"])
+                pass
             except Exception as e:
                 logging.debug(
                     "Down + remove orphans failed during shutdown. {}".format(repr(e))
@@ -3365,6 +3434,7 @@ class ClickHouseInstance:
         clickhouse_path_dir,
         with_odbc_drivers,
         with_postgres,
+        with_postgres_ssl,
         with_postgres_cluster,
         with_postgresql_java_client,
         clickhouse_start_command=CLICKHOUSE_START_COMMAND,
@@ -3433,6 +3503,7 @@ class ClickHouseInstance:
         self.with_mysql8 = with_mysql8
         self.with_mysql_cluster = with_mysql_cluster
         self.with_postgres = with_postgres
+        self.with_postgres_ssl = with_postgres_ssl
         self.with_postgres_cluster = with_postgres_cluster
         self.with_postgresql_java_client = with_postgresql_java_client
         self.with_kafka = with_kafka
